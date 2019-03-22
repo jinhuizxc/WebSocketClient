@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * Android WebSocket实现即时通讯功能
  * https://www.jianshu.com/p/7b919910c892
  * https://github.com/yangxch/WebSocketClient
  */
