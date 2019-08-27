@@ -2,6 +2,8 @@ package com.jh.websocketclient.service;
 
 import android.annotation.SuppressLint;
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -9,8 +11,10 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.text.TextUtils;
 import android.util.Log;
 
+import com.jh.websocketclient.R;
 import com.jh.websocketclient.websocket.MyWebSocketClient;
 
 public class WebSocketService extends Service {
@@ -69,6 +73,8 @@ public class WebSocketService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
+        
+        // 开启websocket
        openMyWebSocket();
         // 开启心跳检测
        MyWebSocketClient.getInstance(this).openHeart();
@@ -84,7 +90,22 @@ public class WebSocketService extends Service {
             startForeground(GRAY_SERVICE_ID, new Notification());
         } else {
             //Android7.0以上app启动后通知栏会出现一条"正在运行"的通知
-            startForeground(GRAY_SERVICE_ID, new Notification());
+//            startForeground(GRAY_SERVICE_ID, new Notification());
+            if (Build.VERSION.SDK_INT >= 26) {
+                String channelId = "MyChannelId";
+                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                NotificationChannel channel = new NotificationChannel(channelId, "name", NotificationManager.IMPORTANCE_MIN);
+                manager.createNotificationChannel(channel);
+
+                Notification.Builder builder = new Notification.Builder(this)
+                        .setChannelId(channelId)
+                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setPriority(Notification.PRIORITY_MIN)
+                        .setAutoCancel(true);
+                Notification notification = new Notification.InboxStyle(builder).build();
+
+                startForeground(1, notification);
+            }
         }
 
         acquireWakeLock();

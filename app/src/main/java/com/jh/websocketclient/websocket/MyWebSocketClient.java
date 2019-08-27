@@ -15,6 +15,7 @@ import android.util.Log;
 import com.jh.websocketclient.MainActivity;
 import com.jh.websocketclient.R;
 import com.jh.websocketclient.util.Util;
+import com.orhanobut.logger.Logger;
 
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
@@ -38,16 +39,16 @@ import static android.support.v4.app.NotificationCompat.VISIBILITY_PUBLIC;
  * 服务器未开启,websocket请求建立重连，请求不到或者达到某个次数就终止请求，不让异常发生！
  * <p>
  * onClose: 长链接关闭    // 登录状态时才重连
+ *
+ * 使用WebSocket实现Android端即时通讯聊天功能
+ * https://blog.csdn.net/beita08/article/details/80162070
+ * https://www.jianshu.com/p/7b919910c892
+ *
  */
 public class MyWebSocketClient extends WebSocketClient {
 
     public static final String TAG = "MyWebSocketClient";
 
-    private static final int TYPE_RECEIVE = 0;//接受的消息
-    private static final int TYPE_SEND = 1;//发送的消息
-    private static final int STATUS_UNREAD = 0;//未读消息
-    private static final int STATUS_READED = 1;//已读消息
-    private static final int MSG_HEART = 1;   // 心跳
     private static final String serverUriStr = Util.ws;
 
     //单例选择懒汉模式
@@ -60,6 +61,7 @@ public class MyWebSocketClient extends WebSocketClient {
         /*ws://服务器ip:8282*/
         super(URI.create(serverUriStr));
         this.mContext = context;
+        Logger.d("MyWebSocketClient ->ws地址: " + serverUriStr);
     }
 
     //2.公开方法,返回单例对象
@@ -77,21 +79,46 @@ public class MyWebSocketClient extends WebSocketClient {
     }
 
 
+
     //    -------------------------------------websocket心跳检测------------------------------------------------
-    private static final long HEART_BEAT_RATE = 10 * 1000;// 每隔10秒进行一次对长连接的心跳检测
     private Handler mHandler = new Handler();
+
+    private static final long HEART_BEAT_RATE = 10 * 1000;// 每隔10秒进行一次对长连接的心跳检测
+    private static final long MSG_TIME = 50 * 1000;// 每隔5秒进行一次消息发送给后台
+
+    // 开启心跳检测
+    public void openHeart() {
+        mHandler.postDelayed(heartBeatRunnable, HEART_BEAT_RATE);
+//        mHandler.postDelayed(MSG_RUNNABLE, MSG_TIME);
+    }
+
+    /**
+     * 每隔5秒进行一次消息发送给后台
+     */
+    private Runnable MSG_RUNNABLE = new Runnable() {
+        @Override
+        public void run() {
+            if (null != client) {
+                if (client.isOpen()) {
+                    client.send("我是空消息");
+                    Logger.w("MyWebSocketClient ->发送1条消息给后台");
+                }
+            }
+            mHandler.postDelayed(this, MSG_TIME);
+        }
+    };
+
     private Runnable heartBeatRunnable = new Runnable() {
         @Override
         public void run() {
-            Log.e("WebSocketService", "心跳包检测websocket连接状态");
+            Logger.w("MyWebSocketClient ->心跳包检测websocket连接状态: ");
             if (client != null) {
                 if (client.isClosed()) {
                     reconnectWs();  // 重连
                 }
             } else {
                 //如果client已为空，重新初始化连接
-                client = null;
-                getInstance(mContext);
+                initSocketClient();
             }
             //每隔一定的时间，对长连接进行一次心跳检测
             mHandler.postDelayed(this, HEART_BEAT_RATE);
@@ -99,10 +126,18 @@ public class MyWebSocketClient extends WebSocketClient {
     };
 
     /**
+     * 初始化websocket连接
+     */
+    private void initSocketClient() {
+        getInstance(mContext).toConnect();
+    }
+
+    /**
      * 开启重连
      */
     private void reconnectWs() {
-        mHandler.removeCallbacks(heartBeatRunnable);
+        Logger.e("MyWebSocketClient ->开启重连");
+        removeCallBack();
         new Thread() {
             @Override
             public void run() {
@@ -116,18 +151,24 @@ public class MyWebSocketClient extends WebSocketClient {
         }.start();
     }
 
+    private void removeCallBack() {
+        mHandler.removeCallbacks(heartBeatRunnable);
+        mHandler.removeCallbacks(MSG_RUNNABLE);
+    }
+
 
     // 长链接开启
     @Override
     public void onOpen(ServerHandshake handshakedata) {
-        Log.e(TAG, "onOpen: 长链接开启");
+        Logger.e("MyWebSocketClient ->onOpen: 长链接开启");
+        showOnOpen("onOpen");
     }
 
     // 消息通道收到消息
     @Override
     public void onMessage(final String message) {
-        Log.e(TAG, "onMessage: 消息通道收到消息" + message);
-        Log.e("WebSocketService", "收到的消息：" + message);
+        Logger.e("MyWebSocketClient ->onMessage: 消息通道收到消息 = " + message);
+        showOnOpen(message);
         Intent intent = new Intent();
         intent.setAction("com.xch.servicecallback.content");
         intent.putExtra("message", message);
@@ -143,24 +184,50 @@ public class MyWebSocketClient extends WebSocketClient {
     @Override
     public void onMessage(ByteBuffer bytes) {
         super.onMessage(bytes);
+        Logger.e("MyWebSocketClient ->onMessage bytes:" + bytes);
     }
 
     // 长链接关闭
     @Override
     public void onClose(int code, String reason, boolean remote) {
-        Log.e(TAG, "onClose: 长链接关闭");
+        Logger.e("MyWebSocketClient ->onClose: 长链接关闭");
+        showClose(code, reason);
+        if (remote) {
+            reconnectWs();
+        }
     }
 
     // 链接发生错误
     @Override
     public void onError(Exception ex) {
-        Log.e(TAG, "onError: 链接发生错误" + ex.toString());
+        if (ex != null) {
+            Logger.e("MyWebSocketClient ->onError: 链接发生错误" + ex.toString());
+            showError(ex);
+            reconnectWs();
+        }
     }
 
-    // 开启心跳检测
-    public void openHeart() {
-        mHandler.postDelayed(heartBeatRunnable, HEART_BEAT_RATE);
+    /********************打印连接后日志************************/
+    private void showOnOpen(String message) {
+        if (message != null) {
+            Logger.d("获取到服务器信息【" + message + "】");
+        }
     }
+
+    private void showClose(int code, String reason) {
+        if (code != 0 && reason != null) {
+            Logger.d("onClose 断开服务器连接【" + getURI() + "，状态码： " + code + "，断开原因：" + reason + "】");
+        }
+    }
+
+
+    private void showError(Exception exception) {
+        if (exception != null) {
+            Logger.d("onError 连接发生了异常【异常原因：" + exception + "】");
+        }
+    }
+
+
 
 //    /**
 //     * 初始化websocket连接
@@ -207,8 +274,13 @@ public class MyWebSocketClient extends WebSocketClient {
 
     /**
      * 连接websocket
+     * 异常:
+     *  Process: com.jh.websocketclient, PID: 23145
+     *     java.lang.IllegalStateException: WebSocketClient objects are not reuseable
+     *
      */
     public void toConnect() {
+        Logger.d("MyWebSocketClient ->toConnect");
         new Thread() {
             @Override
             public void run() {
@@ -224,7 +296,6 @@ public class MyWebSocketClient extends WebSocketClient {
 
 
     //    -----------------------------------消息通知--------------------------------------------------------
-
     /**
      * 检查锁屏状态，如果锁屏先点亮屏幕
      *

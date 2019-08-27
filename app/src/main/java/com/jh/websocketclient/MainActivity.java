@@ -107,6 +107,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         initView();
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unbindService(serviceConnection);
+    }
+
     /**
      * 绑定服务
      */

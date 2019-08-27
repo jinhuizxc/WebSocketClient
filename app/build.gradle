@@ -29,4 +29,8 @@ dependencies {
     implementation 'org.java-websocket:Java-WebSocket:1.4.0'
     implementation 'org.greenrobot:eventbus:3.1.1'
     implementation 'com.blankj:utilcode:1.22.10'
+
+    // 统一logger日志打印
+    implementation 'com.orhanobut:logger:2.2.0'
+
 }
